@@ -73,7 +73,7 @@ This project consists of a multi-stage pipeline for:
 
 - **Toponym Recognition**: Extracted geographic entities (cities, states, countries, etc.) using spaCy.
 - **Toponym Disambiguation**: Resolved ambiguous locations with the help of large language models (GPT-4o) and geospatial validation.
-  - The comparison that we have done for the toponym disambiguation with traditional geoparsers and LLMs can be found here: https://anonymous.4open.science/r/toporesolve-9176/README.md
+  - The comparison that we have done for the toponym disambiguation with traditional geoparsers and LLMs can be found here: [https://github.com/wm-newslab/toporesolve](https://github.com/wm-newslab/toporesolve)
   
 - **Feature Engineering**: Extracted spatial-semantic features based on following four main classes.
   - **Toponym Counts in Titles**: The presence of toponyms in news titles is a strong indicator of spatial emphasis. We extracted the counts of toponyms in the titles of news articles for each geo-focus level.
