@@ -1,0 +1,56 @@
+#!python
+
+import argparse
+import sys
+
+from nlgf.model import train, predict
+from nlgf.experiment import gpt_geo_focus_classification
+
+
+def get_args():
+    parser = argparse.ArgumentParser(
+        description="Train, predict, or evaluate using the XGBoost classifier.",
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=30)
+    )
+    parser.add_argument("--mode", required=True, choices=["train", "predict", "evaluate"], help="Mode: train, predict, or evaluate")
+    parser.add_argument("--data_file", help="Path to input CSV file")
+    parser.add_argument("--model_path", help="Path to save/load the model")
+    parser.add_argument("--article_link", help="Local news aricle's link")
+    parser.add_argument("--publisher_longitude", help="Publisher's location's longitude")
+    parser.add_argument("--publisher_latitude", help="Publisher's location's latitude")
+    parser.add_argument("--result_path", help="Path for results")
+    return parser
+
+
+def process_args(args):
+    if args.mode == 'train':
+        if not args.data_file or not args.model_path:
+            raise ValueError("Training requires --data_file and --model_path.")
+        train(args.data_file, args.model_path)
+
+    elif args.mode == 'predict':
+        if not args.model_path:
+            raise ValueError("Prediction requires article_link, publisher_longitude, publisher_latitude, model_path(optional)")
+        geo_focus_level, geo_focus = predict(args.article_link, args.publisher_longitude, args.publisher_latitude, args.model_path)
+        print (f"Geo focus level: {geo_focus_level}")
+        print (f"Geo focus: {geo_focus}")
+
+    elif args.mode == 'evaluate':
+        if not args.data_file or not args.model_path:
+            raise ValueError("Evaluation requires --data_file and --result_path.")
+        gpt_geo_focus_classification(args.data_file, args.result_path)
+
+def main():
+    if( len(sys.argv) > 1 ):
+        if( sys.argv[1] == '-v' or sys.argv[1] == '--version' ):
+            from nlgf.version import __appversion__
+            print(__appversion__)
+            return
+
+    parser = get_args()
+    args = parser.parse_args()
+    process_args(args)
+
+
+if __name__ == '__main__':
+    main()

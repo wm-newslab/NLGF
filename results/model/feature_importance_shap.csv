@@ -1,0 +1,16 @@
+feature,mean_abs_shap
+leading_topo_state_igl_cnt,0.45567098
+leading_topo_intl_igl_cnt,0.41335487
+leading_topo_national_igl_cnt,0.36910644
+leading_topo_local_igl_cnt,0.35750443
+state_igl_cnt,0.31513104
+intl_igl_cnt,0.22076426
+uniq_national_igl,0.16786645
+national_igl_cnt,0.11599818
+uniq_local_igl,0.10969907
+title_topo_cnt_state,0.06949388
+title_topo_cnt_intl,0.06090727
+local_igl_cnt,0.058423333
+uniq_intl_igl,0.03753913
+title_topo_cnt_local,0.035277866
+title_topo_cnt_national,0.033221666
