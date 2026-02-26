@@ -8,7 +8,7 @@ To cite, kindly use:
 ```
 @misc{gangani_nwala_nlgf,
  author={Ariyarathne, Gangani and Nwala, Alexander C.},  
- title={{NLGF}: Identifying the Geographic Foci of US Local News}, 
+ title={Identifying the Geographic Foci of US Local News}, 
  howpublished = "\url{https://github.com/wm-newslab/NLGF}",
  year = {2026}
 }
