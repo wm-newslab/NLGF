@@ -38,8 +38,7 @@ Our contributions are as follows. First, our expert-annotated dataset is a valua
 ## 2.Installation 
 
 ```
-$ wget -O nlgf.zip wget -O nlgf.zip https://anonymous.4open.science/api/repo/NLGF-0D8D/zip
-$ unzip nlgf.zip -d nlgf
+$ wget -O nlgf.zip wget -O nlgf.zip https://github.com/wm-newslab/NLGF.git
 $ cd nlgf/; pip install .;python -m spacy download en_core_web_sm; cd ..; rm nlgf.zip; rm -rf nlgf;
 ```
 
