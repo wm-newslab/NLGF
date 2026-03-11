@@ -6,11 +6,15 @@ NLGF is a geo-focus identification model designed for US local news. It identifi
 
 To cite, kindly use:
 ```
-@misc{gangani_nwala_nlgf,
- author={Ariyarathne, Gangani, suru Ariyarathne, Greatness Emmanuel-King, Kate Lawal, and Alexander C. Nwala},  
- title={Identifying the Geographic Foci of US Local News}, 
- howpublished = "\url{https://github.com/wm-newslab/NLGF}",
- year = {2026}
+@inproceedings{ariyarathne_gangani_nwala_geo_focus,
+  author    = {Ariyarathne, Gangani and Ariyarathne, Isuru and Emmanuel-King, Greatness and Lawal, Kate and Nwala, Alexander C.},
+  title     = {{Identifying the Geographic Foci of US Local News}},
+  booktitle = {Proceedings of the 18th ACM Web Science Conference (WebSci ’26)},
+  year      = {2026},
+  location  = {Braunschweig, Germany},
+  publisher = {ACM},
+  doi       = {10.1145/3795766.3799765},
+  url       = {https://doi.org/10.1145/3795766.3799765}
 }
 ```
 
