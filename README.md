@@ -196,17 +196,17 @@ Cliff-Clavin was designed to identify geo-foci rather than geo-focus levels. How
 
 First, navigate to the `NLGF/nlgf` directory and execute the following commands
 
-#### Hugging Face implementation (default)
+#### 6.1.1 Hugging Face implementation 
 
 Toponym disambiguation uses the Hugging Face Inference Providers API by default. Create a [Hugging Face access token](https://huggingface.co/settings/tokens) with permission to use Inference Providers, accept the selected model's terms if it is gated, and export the token:
 
-```bash
+```
 export HF_TOKEN=<your_huggingface_token>
 ```
 
 The default model is `meta-llama/Llama-3.1-8B-Instruct`. Run a prediction with the default model:
 
-```bash
+```
 python predict.py \
   --article_link <article-url> \
   --publisher_longitude <longitude> \
@@ -215,17 +215,17 @@ python predict.py \
 
 Use another hosted chat-completion model with `--huggingface_model`. The implementation includes short-name aliases for `Llama-3.1-8B-Instruct` and `Qwen2.5-7B-Instruct`; a full Hugging Face model ID is also accepted:
 
-```bash
+```
 python predict.py \
   --article_link <article-url> \
   --publisher_longitude <longitude> \
   --publisher_latitude <latitude> \
-  --huggingface_model Qwen2.5-7B-Instruct
+  --huggingface_model <huggingface_model_name>
 ```
 
 The selected model must be available through Hugging Face Inference Providers and support chat completion. The model resolves each recognized place name to a latitude, longitude, and administrative type; NLGF then validates those coordinates against its county, state, and country boundary data before creating features for the XGBoost classifier.
 
-#### Optional GPT backend
+#### 6.1.2. GPT backend
 
 To use GPT-4o instead, export an OpenAI API key:
 
@@ -235,7 +235,7 @@ export OPENAI_API_KEY=<your_api_key_here>
 
 Then select the GPT backend explicitly:
 
-```bash
+```
 python predict.py \
   --article_link <article-url> \
   --publisher_longitude <longitude> \
@@ -245,7 +245,7 @@ python predict.py \
 
 Following is an example
 
-```bash
+```
 python predict.py --article_link "https://www.canoncitydailyrecord.com/2024/05/24/colorado-artificial-intelligence-ai-law-regulations-tech-congress-discrimination/" --publisher_longitude -105.27973 --publisher_latitude 38.464212
 ```
 
