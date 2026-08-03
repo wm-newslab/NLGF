@@ -15,8 +15,22 @@ from sklearn.metrics import (
 from sklearn.inspection import permutation_importance
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier
-from util import get_features, get_geo_focus_label, evaluate_geo_focus, get_county_name, get_country_name
-
+try:
+    from .util_batch import (
+        get_features,
+        get_geo_focus_label,
+        evaluate_geo_focus,
+        get_county_name,
+        get_country_name,
+    )
+except ImportError:
+    from util_batch import (
+        get_features,
+        get_geo_focus_label,
+        evaluate_geo_focus,
+        get_county_name,
+        get_country_name,
+    )
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
 feature_cols = [
@@ -233,7 +247,8 @@ def train(data_file, model_path):
     print(f"Model, encoder, and top features saved to disk.")
 
 
-def predict(link, publisher_longitude, publisher_latitude, model_path="../results/model" ):
+def predict(link, publisher_longitude, publisher_latitude, model_path="../results/model",
+            disambiguation_backend="huggingface", huggingface_model=None):
     nlgf_path = os.path.join(model_path, 'nlfg.pkl')
     if not os.path.exists(nlgf_path):
         raise FileNotFoundError(f"Model file not found: {nlgf_path}")
@@ -243,7 +258,12 @@ def predict(link, publisher_longitude, publisher_latitude, model_path="../result
     with open(os.path.join(model_path, 'labels.json'), 'r') as f:
         class_to_index = json.load(f)
 
-    features, toponym_scores = get_features(link, publisher_longitude, publisher_latitude)
+    feature_args = {"disambiguation_backend": disambiguation_backend}
+    if huggingface_model:
+        feature_args["huggingface_model"] = huggingface_model
+    features, toponym_scores = get_features(
+        link, publisher_longitude, publisher_latitude, **feature_args
+    )
     if isinstance(features, dict):
         features = [features]  
     input_data = pd.DataFrame(features)

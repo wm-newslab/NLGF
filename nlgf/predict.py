@@ -11,14 +11,22 @@ def get_args():
     parser.add_argument("--article_link", help="Local news aricle's link")
     parser.add_argument("--publisher_longitude", help="Publisher's location's longitude")
     parser.add_argument("--publisher_latitude", help="Publisher's location's latitude")
+    parser.add_argument("--disambiguation_backend", choices=["huggingface", "gpt"],
+                        default="huggingface")
+    parser.add_argument("--huggingface_model", default=None,
+                        help="Hosted Hugging Face model ID or supported short name")
     return parser
 
 
 def process_args(args):
 
-    if not args.article_link and not args.publisher_longitude and not args.publisher_latitude:
+    if not args.article_link or args.publisher_longitude is None or args.publisher_latitude is None:
         raise ValueError("Prediction requires article_link, publisher_longitude, publisher_latitude")
-    geo_focus_level, geo_focus = predict(args.article_link, args.publisher_longitude, args.publisher_latitude)
+    geo_focus_level, geo_focus = predict(
+        args.article_link, args.publisher_longitude, args.publisher_latitude,
+        disambiguation_backend=args.disambiguation_backend,
+        huggingface_model=args.huggingface_model,
+    )
     print (f"Geo focus level: {geo_focus_level}")
     print (f"Geo focus: {geo_focus}")
 

@@ -277,7 +277,7 @@ def analyze_gpt_geo_focus_level_predictions(csv_path):
     print(f"Balanced dataset size per class: {min_count}")
     print(f"\nAccuracy: {accuracy_score(y_true, y_pred):.4f}")
     print("\nClassification Report (ordered):")
-    print(classification_report(y_true, y_pred, labels=labels, digits=2))
+    print(classification_report(y_true, y_pred, labels=labels, digits=3))
 
     font_files = fm.findSystemFonts(fontpaths=["./fonts/"])
     for font_file in font_files:
@@ -300,7 +300,7 @@ def analyze_gpt_geo_focus_level_predictions(csv_path):
         cbar=True,
         linewidths=0.5,
         linecolor='gray',
-        annot_kws={"fontsize": 48}   
+        annot_kws={"fontsize": 36}   
     )
 
     cbar = ax.collections[0].colorbar

@@ -20,7 +20,6 @@ from newspaper import Article
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import precision_score, recall_score, f1_score, classification_report, accuracy_score, confusion_matrix
-from huggingface_hub import InferenceClient, whoami
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -35,7 +34,6 @@ HUGGINGFACE_MODEL_ALIASES = {
 }
 _hf_client = None
 _hf_client_token = None
-_hf_request_count = 0
 
 county_geojson = '../data/resources/county.geojson'
 state_geojson = '../data/resources/state-us.geojson'
@@ -211,15 +209,6 @@ def _get_huggingface_client():
     """Create and cache a client for Hugging Face Inference Providers."""
     global _hf_client, _hf_client_token
     token = os.getenv("HF_TOKEN")
-
-    account = whoami(token=token)
-
-    print("\nHugging Face client information")
-    print("Account:", account.get("name"))
-    print("Token prefix:", token[:8] + "...")
-    print("Python process:", os.getpid())
-    print("util.py loaded from:", os.path.abspath(__file__))
-
     if not token:
         raise RuntimeError(
             "Hugging Face inference requires HF_TOKEN with Inference Providers permission."
@@ -240,138 +229,296 @@ def _get_huggingface_client():
     return _hf_client
 
 
+
+def _extract_json_array(response_text):
+    """Extract and parse a JSON array from a model response."""
+    text = str(response_text).strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+
+    start = text.find("[")
+    end = text.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError(f"No JSON array found in model response: {response_text!r}")
+
+    parsed = json.loads(text[start:end + 1])
+    if not isinstance(parsed, list):
+        raise ValueError("Model response was not a JSON array.")
+    return parsed
+
+
+def _coordinates_to_geo_result(
+        latitude, longitude, admin_type,
+        county_polygons, state_polygons, country_polygons,
+        publisher_state_geoid):
+    """Convert coordinates and administrative type to the NLGF result format."""
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except (TypeError, ValueError):
+        return None
+
+    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+        return None
+
+    admin_type = str(admin_type).strip().lower()
+    local_types = {
+        "city", "town", "village", "municipality", "borough",
+        "local", "county", "parish"
+    }
+    if admin_type in local_types:
+        admin_type = "county"
+
+    if admin_type == "country":
+        geo_id = get_geo_id(longitude, latitude, country_polygons)
+        if not geo_id:
+            return None
+        igl = "national" if geo_id == "USA" else "international"
+    elif admin_type == "state":
+        geo_id = get_geo_id(longitude, latitude, state_polygons)
+        if not geo_id:
+            return None
+        igl = "state" if geo_id == publisher_state_geoid else "national"
+    elif admin_type == "county":
+        geo_id = get_geo_id(longitude, latitude, county_polygons)
+        state_geo_id = get_geo_id(longitude, latitude, state_polygons)
+        if not geo_id:
+            return None
+        igl = "local" if state_geo_id == publisher_state_geoid else "national"
+    else:
+        return None
+
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        "ADM": admin_type,
+        "IGL": igl,
+        "geoid": geo_id,
+    }
+
+
+def _build_unique_toponym_items(toponym_entities):
+    """Build unique entity-context items while preserving a map to all mentions."""
+    unique_items = []
+    key_to_id = {}
+
+    for entity in toponym_entities:
+        entity_text = str(entity.get("entity", "")).strip()
+        entity_type = str(entity.get("class", "")).strip()
+        sentences = entity.get("context", {}).get("sents", [])
+        sentence = str(sentences[0].get("sent", "")).strip() if sentences else ""
+
+        if not entity_text or not sentence:
+            continue
+
+        key = (entity_text.lower(), entity_type.lower(), sentence)
+        if key in key_to_id:
+            continue
+
+        item_id = f"loc_{len(unique_items):04d}"
+        key_to_id[key] = item_id
+        unique_items.append({
+            "id": item_id,
+            "entity": entity_text,
+            "entity_type": entity_type,
+            "sentence": sentence,
+        })
+
+    return unique_items, key_to_id
+
+
+def disambiguate_entities_with_coords_huggingface(
+        toponym_entities, city, state,
+        county_polygons, state_polygons, country_polygons,
+        publisher_state_geoid, model_id=DEFAULT_HUGGINGFACE_MODEL,
+        batch_size=25):
+    """Resolve all unique article toponyms in batched Hugging Face requests."""
+    if not toponym_entities:
+        return {}, {}
+
+    client = _get_huggingface_client()
+    model_id = HUGGINGFACE_MODEL_ALIASES.get(model_id, model_id)
+    unique_items, key_to_id = _build_unique_toponym_items(toponym_entities)
+
+    result_by_id = {item["id"]: None for item in unique_items}
+    if not unique_items:
+        return result_by_id, key_to_id
+
+    for start in range(0, len(unique_items), batch_size):
+        batch = unique_items[start:start + batch_size]
+        request_payload = json.dumps(batch, ensure_ascii=False, indent=2)
+
+        prompt = f"""
+The following place-name candidates were extracted from a news article
+published in {city}, {state}.
+
+Some candidates may not be geographic locations. For example, abbreviations
+such as "AI" may have been incorrectly identified as places.
+
+Resolve every item using its sentence context.
+
+For each input item, return exactly one output object with the same "id".
+
+If the candidate is not a geographic place, return:
+{{"id":"<same id>","is_location":false,"latitude":null,"longitude":null,"type":null}}
+
+If the candidate is a geographic place, return:
+{{"id":"<same id>","is_location":true,"latitude":<decimal>,"longitude":<decimal>,"type":"<county|state|country>"}}
+
+Use "county" for cities, towns, villages, counties, municipalities, and other local places.
+Use "state" only for a state or equivalent first-level region.
+Use "country" only for a country.
+Return valid JSON only, as one JSON array, with one object for every input item.
+
+Input items:
+{request_payload}
+""".strip()
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You accurately resolve geographic place names. "
+                    "You always return valid JSON and preserve every input ID."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ]
+
+        max_tokens = min(4096, max(512, len(batch) * 120))
+        print(
+            f"Sending Hugging Face batch {start // batch_size + 1} "
+            f"for {len(batch)} unique toponym candidates."
+        )
+
+        try:
+            response = client.chat_completion(
+                model=model_id,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=0,
+            )
+            response_text = response.choices[0].message.content.strip()
+            parsed_items = _extract_json_array(response_text)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Hugging Face batch disambiguation failed for {len(batch)} "
+                f"entities using model {model_id!r}: {exc}"
+            ) from exc
+
+        expected_ids = {item["id"] for item in batch}
+        for parsed_item in parsed_items:
+            if not isinstance(parsed_item, dict):
+                continue
+
+            item_id = str(parsed_item.get("id", "")).strip()
+            if item_id not in expected_ids:
+                continue
+
+            is_location = parsed_item.get("is_location")
+            if isinstance(is_location, str):
+                is_location = is_location.strip().lower() == "true"
+            else:
+                is_location = bool(is_location)
+
+            if not is_location:
+                result_by_id[item_id] = None
+                continue
+
+            result_by_id[item_id] = _coordinates_to_geo_result(
+                latitude=parsed_item.get("latitude"),
+                longitude=parsed_item.get("longitude"),
+                admin_type=parsed_item.get("type"),
+                county_polygons=county_polygons,
+                state_polygons=state_polygons,
+                country_polygons=country_polygons,
+                publisher_state_geoid=publisher_state_geoid,
+            )
+
+    resolved = sum(value is not None for value in result_by_id.values())
+    print(f"Resolved {resolved} of {len(result_by_id)} unique candidates.")
+    return result_by_id, key_to_id
+
+
+def disambiguate_entities_with_coords(
+        toponym_entities, city, state,
+        county_polygons, state_polygons, country_polygons,
+        publisher_state_geoid, backend="huggingface",
+        huggingface_model=DEFAULT_HUGGINGFACE_MODEL):
+    """Batch dispatcher for toponym disambiguation."""
+    if backend in {"huggingface", "llama"}:
+        return disambiguate_entities_with_coords_huggingface(
+            toponym_entities=toponym_entities,
+            city=city,
+            state=state,
+            county_polygons=county_polygons,
+            state_polygons=state_polygons,
+            country_polygons=country_polygons,
+            publisher_state_geoid=publisher_state_geoid,
+            model_id=huggingface_model,
+        )
+    raise ValueError("Batch disambiguation currently supports only Hugging Face.")
+
+
 def disambiguate_entity_with_coords_huggingface(
         entity_type, entity, sentence, city, state,
         county_polygons, state_polygons, country_polygons,
         publisher_state_geoid, model_id=DEFAULT_HUGGINGFACE_MODEL):
     """Resolve one toponym through Hugging Face Inference Providers."""
-
-    global _hf_request_count
-
     client = _get_huggingface_client()
     model_id = HUGGINGFACE_MODEL_ALIASES.get(model_id, model_id)
-
-    _hf_request_count += 1
-    request_number = _hf_request_count
-
-    prompt = (
-        f"The sentence is from a news article published in {city}, {state}. "
-        f"Resolve the {entity_type} place name '{entity}' in this sentence: "
-        f"\"{sentence}\". Return only one line in exactly this format: "
-        "latitude: <decimal>, longitude: <decimal>, "
-        "type: <county/state/country>."
-    )
-
-    messages = [
-        {
-            "role": "system",
-            "content": "You accurately resolve geographic place names.",
-        },
-        {
-            "role": "user",
-            "content": prompt,
-        },
-    ]
-
-    print("\n" + "=" * 80)
-    print(f"HF request number: {request_number}")
-    print(f"Model: {model_id}")
-    print(f"Entity: {entity!r}")
-    print(f"Entity type: {entity_type!r}")
-    print(f"Sentence length: {len(str(sentence))}")
-    print(f"Prompt length: {len(prompt)}")
-    print(f"Sentence: {sentence!r}")
-    print("=" * 80)
-
     try:
+        prompt = (
+            f"The sentence is from a news article published in {city}, {state}. "
+            f"Resolve the {entity_type} place name '{entity}' in this sentence: "
+            f"\"{sentence}\". Return only one line in exactly this format: "
+            "latitude: <decimal>, longitude: <decimal>, "
+            "type: <county/state/country>."
+        )
+        messages = [
+            {"role": "system", "content": "You accurately resolve geographic place names."},
+            {"role": "user", "content": prompt},
+        ]
         response = client.chat_completion(
             model=model_id,
             messages=messages,
             max_tokens=80,
         )
-
         response_text = response.choices[0].message.content.strip()
 
-        print(f"HF request #{request_number} succeeded")
-        print(f"Raw response: {response_text!r}")
-
-        pattern = (
-            r"latitude\s*:\s*([-+]?\d*\.?\d+)\s*,\s*"
-            r"longitude\s*:\s*([-+]?\d*\.?\d+)\s*,\s*"
-            r"type\s*:\s*(county|state|country)"
-        )
-
+        pattern = r"latitude\s*:\s*([-+]?\d*\.?\d+)\s*,\s*longitude\s*:\s*([-+]?\d*\.?\d+)\s*,\s*type\s*:\s*(county|state|country)"
         match = re.search(pattern, response_text, re.IGNORECASE)
-
         if not match:
-            print(
-                f"HF request #{request_number} returned an "
-                "unparseable response."
-            )
+            logger.warning("Could not parse Hugging Face response: %s", response_text)
             return None
 
-        latitude = float(match.group(1))
-        longitude = float(match.group(2))
+        latitude, longitude = float(match.group(1)), float(match.group(2))
         admin_type = match.group(3).lower()
-
-        if not (
-            -90 <= latitude <= 90
-            and -180 <= longitude <= 180
-        ):
-            print(
-                f"HF request #{request_number} returned "
-                f"invalid coordinates: {response_text!r}"
-            )
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            logger.warning("Hugging Face model returned invalid coordinates: %s", response_text)
             return None
 
         if admin_type == "country":
-            geo_id = get_geo_id(
-                longitude,
-                latitude,
-                country_polygons,
-            )
-            igl = (
-                "national"
-                if geo_id == "USA"
-                else "international"
-            )
-
+            geo_id = get_geo_id(longitude, latitude, country_polygons)
+            igl = "national" if geo_id == "USA" else "international"
         elif admin_type == "state":
-            geo_id = get_geo_id(
-                longitude,
-                latitude,
-                state_polygons,
-            )
-            igl = (
-                "state"
-                if geo_id == publisher_state_geoid
-                else "national"
-            )
-
+            geo_id = get_geo_id(longitude, latitude, state_polygons)
+            igl = "state" if geo_id == publisher_state_geoid else "national"
         else:
-            geo_id = get_geo_id(
-                longitude,
-                latitude,
-                county_polygons,
-            )
-            state_geo_id = get_geo_id(
-                longitude,
-                latitude,
-                state_polygons,
-            )
-            igl = (
-                "local"
-                if state_geo_id == publisher_state_geoid
-                else "national"
-            )
+            geo_id = get_geo_id(longitude, latitude, county_polygons)
+            state_geo_id = get_geo_id(longitude, latitude, state_polygons)
+            igl = "local" if state_geo_id == publisher_state_geoid else "national"
 
         if not geo_id:
-            print(
-                f"HF request #{request_number}: coordinates "
-                f"did not map to a known {admin_type}."
-            )
+            logger.warning("Model coordinates did not map to a known %s", admin_type)
             return None
-
         return {
             "latitude": latitude,
             "longitude": longitude,
@@ -379,23 +526,9 @@ def disambiguate_entity_with_coords_huggingface(
             "IGL": igl,
             "geoid": geo_id,
         }
-
     except Exception as exc:
-        print("\n" + "!" * 80)
-        print(f"HF request #{request_number} failed")
-        print(f"Entity: {entity!r}")
-        print(f"Entity type: {entity_type!r}")
-        print(f"Sentence: {sentence!r}")
-        print(f"Prompt length: {len(prompt)}")
-        print(f"Exception type: {type(exc).__name__}")
-        print(f"Exception: {exc}")
-        print("!" * 80)
-
         raise RuntimeError(
-            f"Hugging Face request #{request_number} failed "
-            f"for entity={entity!r}, "
-            f"entity_type={entity_type!r}, "
-            f"model={model_id!r}: {exc}"
+            f"Hugging Face disambiguation failed for model '{model_id}': {exc}"
         ) from exc
 
 
@@ -468,11 +601,9 @@ def get_features(link, publisher_longitude, publisher_latitude,
     article.parse()
 
     title = article.title
-    logger.debug(f"Article title: {title}")
-
     content = article.text
     if not content or not title:
-        logger.warning(f"Missing content or title for link: {link}")
+        logger.warning("Missing content or title for link: %s", link)
 
     nlp = spacy.load("en_core_web_sm")
     toponym_entities = parallel_ner(nlp, title, content)
@@ -480,17 +611,55 @@ def get_features(link, publisher_longitude, publisher_latitude,
     county_polygons = load_geojson(county_geojson, county_geojson, state_geojson)
     state_polygons = load_geojson(state_geojson, county_geojson, state_geojson)
     country_polygons = load_geojson(country_geojson, county_geojson, state_geojson)
-    publisher_county_geoid = get_geo_id(publisher_longitude, publisher_latitude, county_polygons)
-    publisher_state_geoid = get_geo_id(publisher_longitude, publisher_latitude, state_polygons)
-    
-    county_name = get_county_name(publisher_county_geoid)
-    city, state = [part.strip() for part in county_name.split(",")]
 
-    entities = []
-    for entity in toponym_entities:
-        if "ADM" not in entity or "IGL" not in entity:
+    publisher_county_geoid = get_geo_id(
+        publisher_longitude, publisher_latitude, county_polygons
+    )
+    publisher_state_geoid = get_geo_id(
+        publisher_longitude, publisher_latitude, state_polygons
+    )
+
+    county_name = get_county_name(publisher_county_geoid)
+    if not county_name:
+        raise RuntimeError(
+            "Could not determine publisher county from "
+            f"longitude={publisher_longitude}, latitude={publisher_latitude}."
+        )
+
+    city, state = [part.strip() for part in county_name.split(",", maxsplit=1)]
+    print(f"Detected {len(toponym_entities)} raw toponym mentions.")
+
+    if disambiguation_backend in {"huggingface", "llama"}:
+        result_by_id, key_to_id = disambiguate_entities_with_coords(
+            toponym_entities=toponym_entities,
+            city=city,
+            state=state,
+            county_polygons=county_polygons,
+            state_polygons=state_polygons,
+            country_polygons=country_polygons,
+            publisher_state_geoid=publisher_state_geoid,
+            backend=disambiguation_backend,
+            huggingface_model=huggingface_model,
+        )
+
+        entities = []
+        for entity in toponym_entities:
+            entity_text = str(entity.get("entity", "")).strip()
+            entity_type = str(entity.get("class", "")).strip()
+            sentences = entity.get("context", {}).get("sents", [])
+            sentence = str(sentences[0].get("sent", "")).strip() if sentences else ""
+            key = (entity_text.lower(), entity_type.lower(), sentence)
+            item_id = key_to_id.get(key)
+            geo_id_info = result_by_id.get(item_id) if item_id else None
+            if geo_id_info:
+                entity.update(geo_id_info.copy())
+            entities.append(entity)
+    else:
+        entities = []
+        for entity in toponym_entities:
             geo_id_info = disambiguate_entity_with_coords(
-                entity['class'], entity['entity'], entity['context']['sents'][0]['sent'],
+                entity['class'], entity['entity'],
+                entity['context']['sents'][0]['sent'],
                 city, state,
                 county_polygons, state_polygons, country_polygons,
                 publisher_state_geoid,
@@ -500,16 +669,6 @@ def get_features(link, publisher_longitude, publisher_latitude,
             if geo_id_info:
                 entity.update(geo_id_info)
             entities.append(entity)
-            continue
-
-        if entity["ADM"] == "county" and entity["IGL"] == "country":
-            county_geo_id = get_geo_id(entity["longitude"], entity["latitude"], county_polygons)
-            entity["geoid"] = county_geo_id
-        elif entity["ADM"] == "state" and entity["IGL"] == "country":
-            state_geo_id = get_geo_id(entity["longitude"], entity["latitude"], state_polygons)
-            entity["geoid"] = state_geo_id
-
-        entities.append(entity)
 
     toponym_scores = calculate_geoid_scores(entities)
     features = extract_features(toponym_scores)
@@ -572,32 +731,39 @@ def generate_dataset(jsonl_file_path, label, csv_file_path, county_polygons, sta
 
                 toponym_entities = parallel_ner(nlp, title, content)
 
-                print("\nArticle extraction information")
-                print("=" * 80)
-                print("Title:", title)
-                print("Content characters:", len(content))
-                print("Detected toponym mentions:", len(toponym_entities))
-
-                for index, item in enumerate(toponym_entities, start=1):
-                    sentence = item["context"]["sents"][0]["sent"]
-
-                    print(
-                        f"{index:3d}. "
-                        f"entity={item['entity']!r}, "
-                        f"class={item['class']!r}, "
-                        f"from_title={item['is_from_title']}, "
-                        f"sentence_length={len(sentence)}"
-                    )
-
-                print("=" * 80)
-
                 publisher_state_geoid = get_geo_id(location.get('longitude'), location.get('latitude'), state_polygons)
 
-                entities = []
-                for entity in toponym_entities:
-                    if "ADM" not in entity or "IGL" not in entity:
+                if disambiguation_backend in {"huggingface", "llama"}:
+                    result_by_id, key_to_id = disambiguate_entities_with_coords(
+                        toponym_entities=toponym_entities,
+                        city=location.get('city'),
+                        state=location.get('state'),
+                        county_polygons=county_polygons,
+                        state_polygons=state_polygons,
+                        country_polygons=country_polygons,
+                        publisher_state_geoid=publisher_state_geoid,
+                        backend=disambiguation_backend,
+                        huggingface_model=huggingface_model,
+                    )
+
+                    entities = []
+                    for entity in toponym_entities:
+                        entity_text = str(entity.get("entity", "")).strip()
+                        entity_type = str(entity.get("class", "")).strip()
+                        sentences = entity.get("context", {}).get("sents", [])
+                        sentence = str(sentences[0].get("sent", "")).strip() if sentences else ""
+                        key = (entity_text.lower(), entity_type.lower(), sentence)
+                        item_id = key_to_id.get(key)
+                        geo_id_info = result_by_id.get(item_id) if item_id else None
+                        if geo_id_info:
+                            entity.update(geo_id_info.copy())
+                        entities.append(entity)
+                else:
+                    entities = []
+                    for entity in toponym_entities:
                         geo_id_info = disambiguate_entity_with_coords(
-                            entity['class'], entity['entity'], entity['context']['sents'][0]['sent'],
+                            entity['class'], entity['entity'],
+                            entity['context']['sents'][0]['sent'],
                             location.get('city'), location.get('state'),
                             county_polygons, state_polygons, country_polygons,
                             publisher_state_geoid,
@@ -606,19 +772,7 @@ def generate_dataset(jsonl_file_path, label, csv_file_path, county_polygons, sta
                         )
                         if geo_id_info:
                             entity.update(geo_id_info)
-                        else:
-                            print("Missing geo_id_info for the entity:", entity)
                         entities.append(entity)
-                        continue
-
-                    if entity["ADM"] == "county" and entity["IGL"] == "country":
-                        county_geo_id = get_geo_id(entity["longitude"], entity["latitude"], county_polygons)
-                        entity["geoid"] = county_geo_id
-                    elif entity["ADM"] == "state" and entity["IGL"] == "country":
-                        state_geo_id = get_geo_id(entity["longitude"], entity["latitude"], state_polygons)
-                        entity["geoid"] = state_geo_id
-
-                    entities.append(entity)
 
                 counts = calculate_geoid_scores(entities)
                 features = extract_features(counts)

@@ -26,33 +26,7 @@ logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="xgboost")
 
-import matplotlib as mpl
-import matplotlib.font_manager as fm
-
-# -----------------------------
-# Register Helvetica fonts
-# -----------------------------
-font_files = fm.findSystemFonts(fontpaths=["./fonts/"])
-for font_file in font_files:
-    if "helvetica" in font_file.lower():
-        fm.fontManager.addfont(font_file)
-
-# Use Helvetica with sensible fallbacks
-mpl.rcParams["font.family"] = "sans-serif"
-mpl.rcParams["font.sans-serif"] = ["Helvetica", "Arial", "DejaVu Sans"]
-
-# -----------------------------
-# Increase global font sizes
-# -----------------------------
-mpl.rcParams.update({
-    "font.size": 16,          # base font
-    "axes.titlesize": 16,     # plot title
-    "axes.labelsize": 16,     # x & y labels
-    "xtick.labelsize": 16,
-    "ytick.labelsize": 16,
-    "legend.fontsize": 16
-})
-
+[fm.fontManager.addfont(font_file) for font_file in fm.findSystemFonts(fontpaths=["./fonts/"])]
 
 
 county_geojson = '../data/resources/county.geojson'
@@ -158,11 +132,7 @@ def evaluate_model(X, y, model, skf, index_to_class, class_names, model_path):
     all_y_true, all_y_pred = [], []
     save_path = os.path.join(model_path, "conf_matrix.png")
 
-    LABEL_ORDER = ["international", "national", "state", "local", "none"]
-    DISPLAY_LABELS = ["intl.", "national", "state", "local", "none"]
-
     inv_index_to_class = {int(k): v for k, v in index_to_class.items()}
-    class_to_index = {v: k for k, v in inv_index_to_class.items()}
 
     for fold, (train_idx, test_idx) in enumerate(skf.split(X, y)):
         print(f"Fold {fold + 1}")
@@ -182,14 +152,16 @@ def evaluate_model(X, y, model, skf, index_to_class, class_names, model_path):
     all_y_true_labels = [inv_index_to_class[i] for i in all_y_true]
     all_y_pred_labels = [inv_index_to_class[i] for i in all_y_pred]
 
-    print("\nClassification Report:\n")
+    disp_class_names = ["intl." if c == "international" else c for c in class_names]
+
+    print("\nClassification Report:")
     print(
-        classification_report(
+        "\n"
+        + classification_report(
             all_y_true_labels,
             all_y_pred_labels,
-            labels=LABEL_ORDER,
-            target_names=DISPLAY_LABELS,
-            digits=2,
+            target_names=disp_class_names,
+            digits=3,
         )
     )
 
@@ -197,15 +169,16 @@ def evaluate_model(X, y, model, skf, index_to_class, class_names, model_path):
     for font_file in font_files:
         if "helvetica" in font_file.lower():
             fm.fontManager.addfont(font_file)
+            print("Loaded font:", font_file)
     mpl.rcParams["font.family"] = "Helvetica"
 
-    ordered_numeric = [class_to_index[label] for label in LABEL_ORDER]
+    ordered_original = class_names
+    class_to_index = {v: k for k, v in inv_index_to_class.items()}
+    ordered_numeric = [class_to_index[l] for l in ordered_original]
 
-    cm = confusion_matrix(
-        all_y_true,
-        all_y_pred,
-        labels=ordered_numeric,
-    )
+    ordered_display = ["intl." if c == "international" else c for c in ordered_original]
+
+    cm = confusion_matrix(all_y_true, all_y_pred, labels=ordered_numeric)
 
     fig, ax = plt.subplots(figsize=(10, 8))
     sns.heatmap(
@@ -213,12 +186,12 @@ def evaluate_model(X, y, model, skf, index_to_class, class_names, model_path):
         annot=True,
         fmt="d",
         cmap="Blues",
-        xticklabels=DISPLAY_LABELS,
-        yticklabels=DISPLAY_LABELS,
+        xticklabels=ordered_display,
+        yticklabels=ordered_display,
         cbar=True,
         linewidths=0.5,
         linecolor="gray",
-        annot_kws={"fontsize": 48},
+        annot_kws={"fontsize": 36},
     )
 
     cbar = ax.collections[0].colorbar
@@ -235,7 +208,6 @@ def evaluate_model(X, y, model, skf, index_to_class, class_names, model_path):
     plt.show()
 
     print(f"Confusion matrix saved to: {save_path}")
-
 
 
 def save_geo_focus_level_results(df, X, final_model, index_to_class, model_path):
@@ -284,85 +256,6 @@ def fix_empty(x):
     except:
         return ["none"]
 
-def save_shap_feature_importance(model, X, model_path):
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X)
-
-    if isinstance(shap_values, list):
-        shap_array = np.stack(shap_values, axis=-1)
-    else:
-        shap_array = np.array(shap_values)
-
-    if shap_array.ndim == 3:
-        shap_array = np.mean(np.abs(shap_array), axis=-1)
-    elif shap_array.ndim != 2:
-        raise ValueError(f"Unexpected SHAP shape: {shap_array.shape}")
-
-    mean_abs_shap = shap_array.mean(axis=0)
-
-    feature_names = model.get_booster().feature_names
-
-    if len(mean_abs_shap) != len(feature_names):
-        raise ValueError(
-            f"Feature mismatch: SHAP={len(mean_abs_shap)} vs model={len(feature_names)}"
-        )
-
-    shap_df = pd.DataFrame({
-        "feature": feature_names,
-        "mean_abs_shap": mean_abs_shap
-    }).sort_values("mean_abs_shap", ascending=False)
-
-    shap_csv = os.path.join(model_path, "feature_importance_shap.csv")
-    shap_df.to_csv(shap_csv, index=False)
-
-    plt.figure(figsize=(10, 6))
-    sns.barplot(
-        data=shap_df.head(15),
-        x="mean_abs_shap",
-        y="feature",
-        color="#1f77b4"
-    )
-
-    plt.xlabel("Feature Importance")
-    plt.ylabel("")
-
-    plt.tight_layout()
-
-    shap_png = os.path.join(model_path, "feature_importance_shap.png")
-    plt.savefig(shap_png, dpi=300)
-    plt.show()
-
-    print(f"SHAP feature importance saved to:\n- {shap_csv}\n- {shap_png}")
-
-
-def print_shap_feature_importance(model, X):
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(X)
-
-    if isinstance(shap_values, list):
-        shap_array = np.stack(shap_values, axis=-1)
-    else:
-        shap_array = np.array(shap_values)
-
-    if shap_array.ndim == 3:
-        shap_array = np.mean(np.abs(shap_array), axis=-1)
-    elif shap_array.ndim != 2:
-        raise ValueError(f"Unexpected SHAP shape: {shap_array.shape}")
-
-    mean_abs_shap = shap_array.mean(axis=0)
-    feature_names = model.get_booster().feature_names
-
-    pairs = sorted(
-        zip(feature_names, mean_abs_shap),
-        key=lambda x: x[1],
-        reverse=True
-    )
-
-    print("\nSHAP Feature Importance (Mean |SHAP|):")
-    for feat, val in pairs:
-        print(f"{feat:35s} {val:.6f}")
-
-
 if __name__ == "__main__":
     df, X, y, class_to_index = load_train_data(data_file, model_path)
 
@@ -372,14 +265,6 @@ if __name__ == "__main__":
     final_model = XGBClassifier(eval_metric='mlogloss', random_state=42, **best_params)
 
     final_model.fit(X_bal, y_bal)
-
-    save_shap_feature_importance(
-        final_model,
-        X_bal,
-        model_path
-    )
-
-    print_shap_feature_importance(final_model, X_bal)
 
     index_to_class = {v: k for k, v in class_to_index.items()}
     class_names = [index_to_class[i] for i in sorted(index_to_class.keys())]
