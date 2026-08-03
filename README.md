@@ -85,7 +85,7 @@ The training dataset consisted of 1,250 US local news articles evenly split acro
 This project consists of a multi-stage pipeline for:
 
 - **Toponym Recognition**: Extracted geographic entities (cities, states, countries, etc.) using spaCy.
-- **Toponym Disambiguation**: Resolved ambiguous locations with the help of large language models (GPT-4o) and geospatial validation.
+- **Toponym Disambiguation**: Resolves ambiguous locations with a hosted Hugging Face model (Llama 3.1 8B Instruct by default) and geospatial validation. GPT-4o remains available as an optional backend.
   - The comparison that we have done for the toponym disambiguation with traditional geoparsers and LLMs can be found here: [https://github.com/wm-newslab/toporesolve](https://github.com/wm-newslab/toporesolve)
   
 - **Feature Engineering**: Extracted spatial-semantic features based on following four main classes.
@@ -196,20 +196,57 @@ Cliff-Clavin was designed to identify geo-foci rather than geo-focus levels. How
 
 First, navigate to the `NLGF/nlgf` directory and execute the following commands
 
-Export the GPT-4o API key as follows, as it is required for toponym disambiguation.
+#### Hugging Face implementation (default)
+
+Toponym disambiguation uses the Hugging Face Inference Providers API by default. Create a [Hugging Face access token](https://huggingface.co/settings/tokens) with permission to use Inference Providers, accept the selected model's terms if it is gated, and export the token:
+
+```bash
+export HF_TOKEN=<your_huggingface_token>
+```
+
+The default model is `meta-llama/Llama-3.1-8B-Instruct`. Run a prediction with the default model:
+
+```bash
+python predict.py \
+  --article_link <article-url> \
+  --publisher_longitude <longitude> \
+  --publisher_latitude <latitude>
+```
+
+Use another hosted chat-completion model with `--huggingface_model`. The implementation includes short-name aliases for `Llama-3.1-8B-Instruct` and `Qwen2.5-7B-Instruct`; a full Hugging Face model ID is also accepted:
+
+```bash
+python predict.py \
+  --article_link <article-url> \
+  --publisher_longitude <longitude> \
+  --publisher_latitude <latitude> \
+  --huggingface_model Qwen2.5-7B-Instruct
+```
+
+The selected model must be available through Hugging Face Inference Providers and support chat completion. The model resolves each recognized place name to a latitude, longitude, and administrative type; NLGF then validates those coordinates against its county, state, and country boundary data before creating features for the XGBoost classifier.
+
+#### Optional GPT backend
+
+To use GPT-4o instead, export an OpenAI API key:
+
 ```
 export OPENAI_API_KEY=<your_api_key_here>
 ```
 
-To predict the geographic focus of a US local news article using the NLGF model, run:
+Then select the GPT backend explicitly:
 
-```
-$ python predict.py --article_link <article-url> --publisher_longitude <longitude> --publisher_latitude <latitude>
+```bash
+python predict.py \
+  --article_link <article-url> \
+  --publisher_longitude <longitude> \
+  --publisher_latitude <latitude> \
+  --disambiguation_backend gpt
 ```
 
 Following is an example
-```
-$ python predict.py --article_link "https://www.canoncitydailyrecord.com/2024/05/24/colorado-artificial-intelligence-ai-law-regulations-tech-congress-discrimination/" --publisher_longitude -105.27973 --publisher_latitude "38.464212"
+
+```bash
+python predict.py --article_link "https://www.canoncitydailyrecord.com/2024/05/24/colorado-artificial-intelligence-ai-law-regulations-tech-congress-discrimination/" --publisher_longitude -105.27973 --publisher_latitude 38.464212
 ```
 
 ### 6.2 Reproducing Results
@@ -231,6 +268,5 @@ To reproduce the results reported in the paper, first navigate to `NLGF/nlgf` di
   ```
   $ python evaluate_cliff_clavin.py
   ```
-
 
 

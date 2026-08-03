@@ -26,14 +26,16 @@ setup(
     ],
     install_requires=[
         'numpy', 
-        'transformers', 
+        'huggingface-hub>=0.31',
         'spacy', 
         'tqdm', 
         'openai', 
         'shapely', 
         'storysniffer',
         'seaborn',
-        'xgboost', 
+        # The committed model artifact is compatible with XGBoost 2.x.
+        # macOS users must install OpenMP separately (`brew install libomp`).
+        'xgboost>=2.1,<3',
         'shap',
         'scikit-learn',
         'matplotlib',
