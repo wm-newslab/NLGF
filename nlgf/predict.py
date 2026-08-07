@@ -1,7 +1,26 @@
 import argparse
+import logging
 import sys
 
 from model import predict
+
+
+QUIET_DEPENDENCY_LOGGERS = (
+    "httpx",
+    "httpcore",
+    "huggingface_hub",
+)
+
+
+def configure_logging(log_level):
+    """Configure NLGF verbosity without showing routine dependency traffic."""
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        force=True,
+    )
+    for logger_name in QUIET_DEPENDENCY_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
 def get_args():
     parser = argparse.ArgumentParser(
@@ -15,6 +34,12 @@ def get_args():
                         default="huggingface")
     parser.add_argument("--huggingface_model", default=None,
                         help="Hosted Hugging Face model ID or supported short name")
+    parser.add_argument(
+        "--log_level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Logging verbosity (default: INFO)",
+    )
     return parser
 
 
@@ -34,6 +59,7 @@ def process_args(args):
 def main():
     parser = get_args()
     args = parser.parse_args()
+    configure_logging(args.log_level)
     process_args(args)
 
 

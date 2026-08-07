@@ -35,10 +35,7 @@ HUGGINGFACE_MODEL_ALIASES = {
 }
 _hf_client = None
 _hf_client_token = None
-<<<<<<< HEAD
 _hf_request_count = 0
-=======
->>>>>>> 984baeb (Update logs)
 
 county_geojson = '../data/resources/county.geojson'
 state_geojson = '../data/resources/state-us.geojson'
@@ -213,7 +210,6 @@ def disambiguate_entity_with_coords_gpt(entity_type, entity, sentence, city, sta
 def _get_huggingface_client():
     """Create and cache a client for Hugging Face Inference Providers."""
     global _hf_client, _hf_client_token
-<<<<<<< HEAD
     token = os.getenv("HF_TOKEN")
 
     account = whoami(token=token)
@@ -227,13 +223,6 @@ def _get_huggingface_client():
     if not token:
         raise RuntimeError(
             "Hugging Face inference requires HF_TOKEN with Inference Providers permission."
-=======
-    token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
-    if not token:
-        raise RuntimeError(
-            "Hugging Face inference requires HF_TOKEN (or "
-            "HUGGINGFACE_HUB_TOKEN) with Inference Providers permission."
->>>>>>> 984baeb (Update logs)
         )
     if _hf_client is not None and _hf_client_token == token:
         return _hf_client
@@ -256,7 +245,6 @@ def disambiguate_entity_with_coords_huggingface(
         county_polygons, state_polygons, country_polygons,
         publisher_state_geoid, model_id=DEFAULT_HUGGINGFACE_MODEL):
     """Resolve one toponym through Hugging Face Inference Providers."""
-<<<<<<< HEAD
 
     global _hf_request_count
 
@@ -296,28 +284,11 @@ def disambiguate_entity_with_coords_huggingface(
     print("=" * 80)
 
     try:
-=======
-    client = _get_huggingface_client()
-    model_id = HUGGINGFACE_MODEL_ALIASES.get(model_id, model_id)
-    try:
-        prompt = (
-            f"The sentence is from a news article published in {city}, {state}. "
-            f"Resolve the {entity_type} place name '{entity}' in this sentence: "
-            f"\"{sentence}\". Return only one line in exactly this format: "
-            "latitude: <decimal>, longitude: <decimal>, "
-            "type: <county/state/country>."
-        )
-        messages = [
-            {"role": "system", "content": "You accurately resolve geographic place names."},
-            {"role": "user", "content": prompt},
-        ]
->>>>>>> 984baeb (Update logs)
         response = client.chat_completion(
             model=model_id,
             messages=messages,
             max_tokens=80,
         )
-<<<<<<< HEAD
 
         response_text = response.choices[0].message.content.strip()
 
@@ -401,36 +372,6 @@ def disambiguate_entity_with_coords_huggingface(
             )
             return None
 
-=======
-        response_text = response.choices[0].message.content.strip()
-
-        pattern = r"latitude\s*:\s*([-+]?\d*\.?\d+)\s*,\s*longitude\s*:\s*([-+]?\d*\.?\d+)\s*,\s*type\s*:\s*(county|state|country)"
-        match = re.search(pattern, response_text, re.IGNORECASE)
-        if not match:
-            logger.warning("Could not parse Hugging Face response: %s", response_text)
-            return None
-
-        latitude, longitude = float(match.group(1)), float(match.group(2))
-        admin_type = match.group(3).lower()
-        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
-            logger.warning("Hugging Face model returned invalid coordinates: %s", response_text)
-            return None
-
-        if admin_type == "country":
-            geo_id = get_geo_id(longitude, latitude, country_polygons)
-            igl = "national" if geo_id == "USA" else "international"
-        elif admin_type == "state":
-            geo_id = get_geo_id(longitude, latitude, state_polygons)
-            igl = "state" if geo_id == publisher_state_geoid else "national"
-        else:
-            geo_id = get_geo_id(longitude, latitude, county_polygons)
-            state_geo_id = get_geo_id(longitude, latitude, state_polygons)
-            igl = "local" if state_geo_id == publisher_state_geoid else "national"
-
-        if not geo_id:
-            logger.warning("Model coordinates did not map to a known %s", admin_type)
-            return None
->>>>>>> 984baeb (Update logs)
         return {
             "latitude": latitude,
             "longitude": longitude,
@@ -438,7 +379,6 @@ def disambiguate_entity_with_coords_huggingface(
             "IGL": igl,
             "geoid": geo_id,
         }
-<<<<<<< HEAD
 
     except Exception as exc:
         print("\n" + "!" * 80)
@@ -456,11 +396,6 @@ def disambiguate_entity_with_coords_huggingface(
             f"for entity={entity!r}, "
             f"entity_type={entity_type!r}, "
             f"model={model_id!r}: {exc}"
-=======
-    except Exception as exc:
-        raise RuntimeError(
-            f"Hugging Face disambiguation failed for model '{model_id}': {exc}"
->>>>>>> 984baeb (Update logs)
         ) from exc
 
 

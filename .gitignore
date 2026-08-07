@@ -94,3 +94,6 @@ Thumbs.db
 # Ignore local model checkpoints if applicable
 checkpoints/
 models/
+
+__pycache__/
+*.py[cod]

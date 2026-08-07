@@ -42,8 +42,7 @@ Our contributions are as follows. First, our expert-annotated dataset is a valua
 ## 2. Installation
 
 NLGF requires Python 3 and the spaCy English model. On macOS, XGBoost also
-requires the OpenMP runtime. OpenMP is a system dependency and cannot be
-installed through `setup.py` or pip.
+requires the OpenMP runtime, which cannot be installed through pip.
 
 ### macOS prerequisite
 
@@ -62,23 +61,23 @@ git clone https://github.com/wm-newslab/NLGF.git
 cd NLGF
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install .
-python -m spacy download en_core_web_sm
+python3 -m pip install --upgrade pip
+python3 -m pip install .
+python3 -m spacy download en_core_web_sm
 ```
 
 Verify the installation:
 
 ```bash
-python -c "import xgboost; import spacy; spacy.load('en_core_web_sm'); print('Installation successful')"
+python3 -c "import xgboost; import spacy; spacy.load('en_core_web_sm'); print('Installation successful')"
 ```
 
-On Windows, activate the environment with `.venv\\Scripts\\activate`. Linux
+On Windows, activate the environment with `.venv\Scripts\activate`. Linux
 distributions may require their OpenMP runtime package (commonly `libgomp`) if
 it is not already installed.
 
 
-## 3.Data
+## 3. Data
 
 The training dataset consisted of 1,250 US local news articles evenly split across all five geo-focus labels. We randomly extracted the local news articles (with publisher location metadata) from the [3DLNews2](https://github.com/wm-newslab/3DLNews2) dataset from all 50 US states. An expert manually annotated each article with one of five geo-focus labels.
 
@@ -111,7 +110,7 @@ The training dataset consisted of 1,250 US local news articles evenly split acro
 
     * Krippendorff’s α = 0.81
 
-## 3. Method
+## 4. Method
 
 This project consists of a multi-stage pipeline for:
 
@@ -148,7 +147,7 @@ This project consists of a multi-stage pipeline for:
     - Scoring factors: frequency in title, total mentions, early occurrence, and GPE recognition.  
     - Scores normalized; toponyms above threshold (0.25, tuned for max F1) selected as final foci.  
 
-## 4. Results
+## 5. Results
 
 Results of the geo-focused identification with the XGBoost-based model.
 
@@ -171,9 +170,9 @@ Results of the geo-focused identification with the XGBoost-based model.
 
 <img src="results/model/conf_matrix.png" alt="Alt Text" width="600"/>
 
-## 5. Experiment
+## 6. Experiment
 
-### 5.1. GPT-4o
+### 6.1. GPT-4o
 
 **Geo-focus Level**
 
@@ -196,7 +195,7 @@ Tested the GPT-4o model for the geo-focus identification task, and the following
 
 <img src="results/gpt/con_matrix_gpt.png" alt="Alt Text" width="600"/>
 
-### 5.2. Cliff-Clavin
+### 6.2. Cliff-Clavin
 
 **Geo-focus Level**
 
@@ -221,151 +220,96 @@ Cliff-Clavin was designed to identify geo-foci rather than geo-focus levels. How
 <img src="results/cc/con_matrix_cc.png" alt="Alt Text" width="600"/>
 
 
-## 6. Usage
+## 7. Usage
 
-### 6.1 Predicting Geo-Focus
+### 7.1 Predicting Geo-Focus
 
-First, activate the virtual environment and navigate to the `NLGF/nlgf`
-directory. The prediction script currently resolves its model and geographic
-resource paths relative to this directory.
+Activate the project environment and navigate to the `NLGF/nlgf` directory before running these commands.
 
-<<<<<<< HEAD
-#### 6.1.1 Hugging Face implementation 
+#### 7.1.1 Hugging Face backend
 
-Toponym disambiguation uses the Hugging Face Inference Providers API by default. Create a [Hugging Face access token](https://huggingface.co/settings/tokens) with permission to use Inference Providers, accept the selected model's terms if it is gated, and export the token:
+Toponym disambiguation uses the Hugging Face Inference Providers API by default. Create a [fine-grained Hugging Face access token](https://huggingface.co/settings/tokens) using the **Inference** preset, which enables **Make calls to Inference Providers**. Accept the selected model's terms if it is gated, then export the token. Keep the token private.
 
-```
-export HF_TOKEN=<your_huggingface_token>
+```bash
+export HF_TOKEN="hf_your_token_here"
 ```
 
 The default model is `meta-llama/Llama-3.1-8B-Instruct`. Run a prediction with the default model:
 
-```
-python predict.py \
-  --article_link <article-url> \
-  --publisher_longitude <longitude> \
-  --publisher_latitude <latitude>
+```bash
+python3 predict.py \
+  --article_link "https://example.com/article" \
+  --publisher_longitude -105.27973 \
+  --publisher_latitude 38.464212
 ```
 
 Use another hosted chat-completion model with `--huggingface_model`. The implementation includes short-name aliases for `Llama-3.1-8B-Instruct` and `Qwen2.5-7B-Instruct`; a full Hugging Face model ID is also accepted:
 
-```
-python predict.py \
-  --article_link <article-url> \
-  --publisher_longitude <longitude> \
-  --publisher_latitude <latitude> \
-  --huggingface_model <huggingface_model_name>
+```bash
+python3 predict.py \
+  --article_link "https://example.com/article" \
+  --publisher_longitude -105.27973 \
+  --publisher_latitude 38.464212 \
+  --huggingface_model Qwen2.5-7B-Instruct
 ```
 
 The selected model must be available through Hugging Face Inference Providers and support chat completion. The model resolves each recognized place name to a latitude, longitude, and administrative type; NLGF then validates those coordinates against its county, state, and country boundary data before creating features for the XGBoost classifier.
 
-#### 6.1.2. GPT backend
+#### 7.1.2 GPT backend
 
 To use GPT-4o instead, export an OpenAI API key:
 
-=======
-By default, prediction uses `meta-llama/Llama-3.1-8B-Instruct` through
-[Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers/index)
-for toponym disambiguation. Create a fine-grained Hugging Face token with
-**Inference Providers** permission and export it before running prediction:
-
 ```bash
-export HF_TOKEN='your_huggingface_token_here'
->>>>>>> 984baeb (Update logs)
-```
-
-For gated repositories such as Meta Llama, first accept the model's license on
-its Hugging Face model page. Requests are routed to an available inference
-provider and may consume Hugging Face inference credits; model availability is
-provider-dependent. The model weights are not downloaded to the local machine.
-
-GPT-4o remains available as an optional backend. To use it, export the API key
-with straight shell quotes (not typographic “smart quotes”):
-
-```bash
-export OPENAI_API_KEY='your_api_key_here'
+export OPENAI_API_KEY="your_api_key_here"
 ```
 
 Then select the GPT backend explicitly:
 
 ```bash
-python predict.py --article_link <article-url> --publisher_longitude <longitude> --publisher_latitude <latitude>
-```
-<<<<<<< HEAD
-=======
-
-Select any compatible Hugging Face causal chat model with
-`--huggingface_model`. NLGF recognizes the short names
-`Llama-3.1-8B-Instruct` and `Qwen2.5-7B-Instruct`; full Hugging Face repository
-IDs also work when an Inference Provider serves the selected model.
-
-Meta Llama example:
-
-```bash
-python predict.py \
-  --article_link <article-url> \
-  --publisher_longitude <longitude> \
-  --publisher_latitude <latitude> \
-  --huggingface_model Llama-3.1-8B-Instruct
-```
-
-Qwen example:
-
-```bash
-python predict.py \
-  --article_link <article-url> \
-  --publisher_longitude <longitude> \
-  --publisher_latitude <latitude> \
-  --huggingface_model Qwen2.5-7B-Instruct
-```
-
-Use `--disambiguation_backend gpt` for the existing GPT-4o backend. Use
-`--disambiguation_backend huggingface` for the Hugging Face backend (the
-default). The GPT backend reads `OPENAI_API_KEY`; the Hugging Face backend reads
-`HF_TOKEN`.
-
-GPT-4o example:
-
-```bash
->>>>>>> 984baeb (Update logs)
-python predict.py \
-  --article_link <article-url> \
-  --publisher_longitude <longitude> \
-  --publisher_latitude <latitude> \
+python3 predict.py \
+  --article_link "https://example.com/article" \
+  --publisher_longitude -105.27973 \
+  --publisher_latitude 38.464212 \
   --disambiguation_backend gpt
 ```
 
-Following is an example
-<<<<<<< HEAD
+#### 7.1.3 Logging and progress
 
-```
-=======
+Prediction displays a progress bar while resolving toponyms. Runtime milestones are logged at `INFO` by default, while routine HTTP request logs from dependencies are suppressed. Set `--log_level` to `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL` to control NLGF's verbosity.
+
 ```bash
->>>>>>> 984baeb (Update logs)
-python predict.py --article_link "https://www.canoncitydailyrecord.com/2024/05/24/colorado-artificial-intelligence-ai-law-regulations-tech-congress-discrimination/" --publisher_longitude -105.27973 --publisher_latitude 38.464212
+python3 predict.py \
+  --article_link "https://www.canoncitydailyrecord.com/2024/05/24/colorado-artificial-intelligence-ai-law-regulations-tech-congress-discrimination/" \
+  --publisher_longitude -105.27973 \
+  --publisher_latitude 38.464212 \
+  --log_level INFO
 ```
 
-### 6.2 Reproducing Results
-To reproduce the results reported in the paper, first navigate to `NLGF/nlgf` directory and execute the following commands
+### 7.2 Reproducing Results
+
+To reproduce the results reported in the paper, navigate to the `NLGF/nlgf` directory and execute the following commands.
 
 
-#### 6.2.1 NLGF model results
-  Run the following command to reproduce NLGF geo-focus classification results.
-  ```
-  $ python train.py
-  ```
-#### 6.2.2 GPT-4o model results:
-  Run the following command to reproduce GPT-4o geo-focus classification results.
-  ```
-  $ python evaluate_gpt.py
-  ```
-#### 6.2.3 Cliff-Clavin model results:
-  Run the following command to reproduce Cliff-Clavin geo-focus classification results.
-  ```
-  $ python evaluate_cliff_clavin.py
-  ```
-<<<<<<< HEAD
+#### 7.2.1 NLGF model results
 
+Run the following command to reproduce NLGF geo-focus classification results.
 
-=======
->>>>>>> 984baeb (Update logs)
+```bash
+python3 train.py
+```
+
+#### 7.2.2 GPT-4o model results
+
+Run the following command to reproduce GPT-4o geo-focus classification results.
+
+```bash
+python3 evaluate_gpt.py
+```
+
+#### 7.2.3 Cliff-Clavin model results
+
+Run the following command to reproduce Cliff-Clavin geo-focus classification results.
+
+```bash
+python3 evaluate_cliff_clavin.py
+```

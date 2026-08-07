@@ -24,7 +24,6 @@ from sklearn.metrics import precision_score, recall_score, f1_score, classificat
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 DEFAULT_HUGGINGFACE_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
@@ -214,6 +213,7 @@ def _get_huggingface_client():
             "Hugging Face inference requires HF_TOKEN with Inference Providers permission."
         )
     if _hf_client is not None and _hf_client_token == token:
+        logger.debug("Reusing the cached Hugging Face inference client")
         return _hf_client
 
     try:
@@ -226,6 +226,7 @@ def _get_huggingface_client():
 
     _hf_client = InferenceClient(provider="auto", api_key=token, timeout=120)
     _hf_client_token = token
+    logger.debug("Created Hugging Face inference client with automatic provider selection")
     return _hf_client
 
 
@@ -351,7 +352,14 @@ def disambiguate_entities_with_coords_huggingface(
     if not unique_items:
         return result_by_id, key_to_id
 
-    for start in range(0, len(unique_items), batch_size):
+    batch_starts = range(0, len(unique_items), batch_size)
+    for start in tqdm(
+        batch_starts,
+        total=(len(unique_items) + batch_size - 1) // batch_size,
+        desc="Resolving toponyms",
+        unit="batch",
+        dynamic_ncols=True,
+    ):
         batch = unique_items[start:start + batch_size]
         request_payload = json.dumps(batch, ensure_ascii=False, indent=2)
 
@@ -359,10 +367,7 @@ def disambiguate_entities_with_coords_huggingface(
 The following place-name candidates were extracted from a news article
 published in {city}, {state}.
 
-Some candidates may not be geographic locations. For example, abbreviations
-such as "AI" may have been incorrectly identified as places.
-
-Resolve every item using its sentence context.
+Some candidates may not be geographic locations. Resolve every item using its sentence context.
 
 For each input item, return exactly one output object with the same "id".
 
@@ -393,9 +398,12 @@ Input items:
         ]
 
         max_tokens = min(4096, max(512, len(batch) * 120))
-        print(
-            f"Sending Hugging Face batch {start // batch_size + 1} "
-            f"for {len(batch)} unique toponym candidates."
+        logger.debug(
+            "Sending Hugging Face batch %d with %d unique toponym candidates "
+            "using model %s",
+            start // batch_size + 1,
+            len(batch),
+            model_id,
         )
 
         try:
@@ -443,7 +451,11 @@ Input items:
             )
 
     resolved = sum(value is not None for value in result_by_id.values())
-    print(f"Resolved {resolved} of {len(result_by_id)} unique candidates.")
+    logger.debug(
+        "Resolved %d of %d unique toponym candidates",
+        resolved,
+        len(result_by_id),
+    )
     return result_by_id, key_to_id
 
 
@@ -627,7 +639,7 @@ def get_features(link, publisher_longitude, publisher_latitude,
         )
 
     city, state = [part.strip() for part in county_name.split(",", maxsplit=1)]
-    print(f"Detected {len(toponym_entities)} raw toponym mentions.")
+    logger.debug("Detected %d raw toponym mentions", len(toponym_entities))
 
     if disambiguation_backend in {"huggingface", "llama"}:
         result_by_id, key_to_id = disambiguate_entities_with_coords(
@@ -656,7 +668,12 @@ def get_features(link, publisher_longitude, publisher_latitude,
             entities.append(entity)
     else:
         entities = []
-        for entity in toponym_entities:
+        for entity in tqdm(
+            toponym_entities,
+            desc="Resolving toponyms",
+            unit="mention",
+            dynamic_ncols=True,
+        ):
             geo_id_info = disambiguate_entity_with_coords(
                 entity['class'], entity['entity'],
                 entity['context']['sents'][0]['sent'],

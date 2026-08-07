@@ -16,7 +16,6 @@ from sklearn.inspection import permutation_importance
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier
 try:
-<<<<<<< HEAD
     from .util_batch import (
         get_features,
         get_geo_focus_label,
@@ -32,13 +31,7 @@ except ImportError:
         get_county_name,
         get_country_name,
     )
-=======
-    from .util import get_features, get_geo_focus_label, evaluate_geo_focus, get_county_name, get_country_name
-except ImportError:  # Support running scripts directly from the nlgf directory.
-    from util import get_features, get_geo_focus_label, evaluate_geo_focus, get_county_name, get_country_name
-
->>>>>>> 984baeb (Update logs)
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 feature_cols = [
     "title_topo_cnt_intl", "title_topo_cnt_national", "title_topo_cnt_state", "title_topo_cnt_local",
@@ -256,11 +249,13 @@ def train(data_file, model_path):
 
 def predict(link, publisher_longitude, publisher_latitude, model_path="../results/model",
             disambiguation_backend="huggingface", huggingface_model=None):
+    logger.info("Starting geo-focus prediction")
     nlgf_path = os.path.join(model_path, 'nlfg.pkl')
     if not os.path.exists(nlgf_path):
         raise FileNotFoundError(f"Model file not found: {nlgf_path}")
 
     model = joblib.load(nlgf_path)
+    logger.debug("Loaded classifier from %s", nlgf_path)
 
     with open(os.path.join(model_path, 'labels.json'), 'r') as f:
         class_to_index = json.load(f)
@@ -288,4 +283,5 @@ def predict(link, publisher_longitude, publisher_latitude, model_path="../result
     elif predicted_label[0] == "international":
         geo_ids = [get_country_name(gid) for gid in geo_ids]
 
+    logger.info("Geo-focus prediction completed")
     return predicted_label[0], geo_ids
