@@ -4,7 +4,6 @@ import argparse
 import sys
 
 from nlgf.model import train, predict
-from nlgf.experiment import gpt_geo_focus_classification
 
 
 def get_args():
@@ -19,6 +18,10 @@ def get_args():
     parser.add_argument("--publisher_longitude", help="Publisher's location's longitude")
     parser.add_argument("--publisher_latitude", help="Publisher's location's latitude")
     parser.add_argument("--result_path", help="Path for results")
+    parser.add_argument("--disambiguation_backend", choices=["huggingface", "gpt"],
+                        default="huggingface")
+    parser.add_argument("--huggingface_model", default=None,
+                        help="Hosted Hugging Face model ID or supported short name")
     return parser
 
 
@@ -31,14 +34,19 @@ def process_args(args):
     elif args.mode == 'predict':
         if not args.model_path:
             raise ValueError("Prediction requires article_link, publisher_longitude, publisher_latitude, model_path(optional)")
-        geo_focus_level, geo_focus = predict(args.article_link, args.publisher_longitude, args.publisher_latitude, args.model_path)
+        geo_focus_level, geo_focus = predict(
+            args.article_link, args.publisher_longitude, args.publisher_latitude,
+            args.model_path,
+            disambiguation_backend=args.disambiguation_backend,
+            huggingface_model=args.huggingface_model,
+        )
         print (f"Geo focus level: {geo_focus_level}")
         print (f"Geo focus: {geo_focus}")
 
     elif args.mode == 'evaluate':
-        if not args.data_file or not args.model_path:
-            raise ValueError("Evaluation requires --data_file and --result_path.")
-        gpt_geo_focus_classification(args.data_file, args.result_path)
+        raise NotImplementedError(
+            "The packaged evaluate command is not available; run nlgf/evaluate_gpt.py directly."
+        )
 
 def main():
     if( len(sys.argv) > 1 ):

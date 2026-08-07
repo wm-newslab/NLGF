@@ -16,6 +16,7 @@ from sklearn.inspection import permutation_importance
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier
 try:
+<<<<<<< HEAD
     from .util_batch import (
         get_features,
         get_geo_focus_label,
@@ -31,6 +32,12 @@ except ImportError:
         get_county_name,
         get_country_name,
     )
+=======
+    from .util import get_features, get_geo_focus_label, evaluate_geo_focus, get_county_name, get_country_name
+except ImportError:  # Support running scripts directly from the nlgf directory.
+    from util import get_features, get_geo_focus_label, evaluate_geo_focus, get_county_name, get_country_name
+
+>>>>>>> 984baeb (Update logs)
 logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
 
 feature_cols = [

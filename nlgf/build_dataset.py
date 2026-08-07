@@ -1,5 +1,7 @@
-from geo_focus_utils import load_geojson
-from geo_focus_utils import generate_dataset
+try:
+    from .util import load_geojson, generate_dataset
+except ImportError:  # Support direct execution from the nlgf directory.
+    from util import load_geojson, generate_dataset
 
 county_geojson = 'data/resources/county.geojson'
 state_geojson = 'data/resources/state-us.geojson'

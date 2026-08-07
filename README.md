@@ -39,12 +39,43 @@ The above figure is a summary of the methodology.
 Our contributions are as follows. First, our expert-annotated dataset is a valuable benchmark for future geo-focus research. Second, we adapted LLMs for toponym disambiguation and showed that they outperform traditional geoparsers. Third, we designed a set of spatial-semantic features that capture how geographic information is emphasized, distributed, and contextualized within articles. Finally, we combined these into this open-source classifier that accurately determines the geo-foci (and geo-focus level) of US local news articles.
 
  
-## 2.Installation 
+## 2. Installation
 
+NLGF requires Python 3 and the spaCy English model. On macOS, XGBoost also
+requires the OpenMP runtime. OpenMP is a system dependency and cannot be
+installed through `setup.py` or pip.
+
+### macOS prerequisite
+
+Install OpenMP with [Homebrew](https://brew.sh/):
+
+```bash
+brew install libomp
 ```
-$ wget -O nlgf.zip wget -O nlgf.zip https://github.com/wm-newslab/NLGF.git
-$ cd nlgf/; pip install .;python -m spacy download en_core_web_sm; cd ..; rm nlgf.zip; rm -rf nlgf;
+
+### Install NLGF
+
+Clone the repository and create an isolated virtual environment:
+
+```bash
+git clone https://github.com/wm-newslab/NLGF.git
+cd NLGF
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install .
+python -m spacy download en_core_web_sm
 ```
+
+Verify the installation:
+
+```bash
+python -c "import xgboost; import spacy; spacy.load('en_core_web_sm'); print('Installation successful')"
+```
+
+On Windows, activate the environment with `.venv\\Scripts\\activate`. Linux
+distributions may require their OpenMP runtime package (commonly `libgomp`) if
+it is not already installed.
 
 
 ## 3.Data
@@ -194,8 +225,11 @@ Cliff-Clavin was designed to identify geo-foci rather than geo-focus levels. How
 
 ### 6.1 Predicting Geo-Focus
 
-First, navigate to the `NLGF/nlgf` directory and execute the following commands
+First, activate the virtual environment and navigate to the `NLGF/nlgf`
+directory. The prediction script currently resolves its model and geographic
+resource paths relative to this directory.
 
+<<<<<<< HEAD
 #### 6.1.1 Hugging Face implementation 
 
 Toponym disambiguation uses the Hugging Face Inference Providers API by default. Create a [Hugging Face access token](https://huggingface.co/settings/tokens) with permission to use Inference Providers, accept the selected model's terms if it is gated, and export the token:
@@ -229,13 +263,71 @@ The selected model must be available through Hugging Face Inference Providers an
 
 To use GPT-4o instead, export an OpenAI API key:
 
+=======
+By default, prediction uses `meta-llama/Llama-3.1-8B-Instruct` through
+[Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers/index)
+for toponym disambiguation. Create a fine-grained Hugging Face token with
+**Inference Providers** permission and export it before running prediction:
+
+```bash
+export HF_TOKEN='your_huggingface_token_here'
+>>>>>>> 984baeb (Update logs)
 ```
-export OPENAI_API_KEY=<your_api_key_here>
+
+For gated repositories such as Meta Llama, first accept the model's license on
+its Hugging Face model page. Requests are routed to an available inference
+provider and may consume Hugging Face inference credits; model availability is
+provider-dependent. The model weights are not downloaded to the local machine.
+
+GPT-4o remains available as an optional backend. To use it, export the API key
+with straight shell quotes (not typographic “smart quotes”):
+
+```bash
+export OPENAI_API_KEY='your_api_key_here'
 ```
 
 Then select the GPT backend explicitly:
 
+```bash
+python predict.py --article_link <article-url> --publisher_longitude <longitude> --publisher_latitude <latitude>
 ```
+<<<<<<< HEAD
+=======
+
+Select any compatible Hugging Face causal chat model with
+`--huggingface_model`. NLGF recognizes the short names
+`Llama-3.1-8B-Instruct` and `Qwen2.5-7B-Instruct`; full Hugging Face repository
+IDs also work when an Inference Provider serves the selected model.
+
+Meta Llama example:
+
+```bash
+python predict.py \
+  --article_link <article-url> \
+  --publisher_longitude <longitude> \
+  --publisher_latitude <latitude> \
+  --huggingface_model Llama-3.1-8B-Instruct
+```
+
+Qwen example:
+
+```bash
+python predict.py \
+  --article_link <article-url> \
+  --publisher_longitude <longitude> \
+  --publisher_latitude <latitude> \
+  --huggingface_model Qwen2.5-7B-Instruct
+```
+
+Use `--disambiguation_backend gpt` for the existing GPT-4o backend. Use
+`--disambiguation_backend huggingface` for the Hugging Face backend (the
+default). The GPT backend reads `OPENAI_API_KEY`; the Hugging Face backend reads
+`HF_TOKEN`.
+
+GPT-4o example:
+
+```bash
+>>>>>>> 984baeb (Update logs)
 python predict.py \
   --article_link <article-url> \
   --publisher_longitude <longitude> \
@@ -244,8 +336,12 @@ python predict.py \
 ```
 
 Following is an example
+<<<<<<< HEAD
 
 ```
+=======
+```bash
+>>>>>>> 984baeb (Update logs)
 python predict.py --article_link "https://www.canoncitydailyrecord.com/2024/05/24/colorado-artificial-intelligence-ai-law-regulations-tech-congress-discrimination/" --publisher_longitude -105.27973 --publisher_latitude 38.464212
 ```
 
@@ -268,5 +364,8 @@ To reproduce the results reported in the paper, first navigate to `NLGF/nlgf` di
   ```
   $ python evaluate_cliff_clavin.py
   ```
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> 984baeb (Update logs)
